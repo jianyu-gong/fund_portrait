@@ -26,7 +26,7 @@ def cal_risk(ChiName, FundTypeCode1, FundTypeCode2, RiskLevel):
             return "R3"
         else:
             return RiskLevel
-        
+    # 所有FOF基金都为R3    
     elif FundTypeCode1 == "15":
         return "R3"
     
@@ -104,5 +104,19 @@ def pre_process_data(df_fundarchives, df_secumain, df_fundtype, df_fundrisklevel
                                .join(df_fundtypechangenew, ["InnerCode"], "left") \
                                .join(df_fundtype, ["FundTypeCode3"], "left") \
                                .join(df_fundrisklevel, ["InnerCode"], "left")
+
+    return df_master
+
+
+def pre_fund_risk_calc(df_master, risk_mapping):
+    """
+    基金事前风险计算
+    """
+    # 通过risk配置表中确定新的分类
+    df_master = df_master.join(risk_mapping, ["FundTypeName1", "FundTypeName2", "FundTypeName3"], "left")
+    # 一般基金计算
+    df_master = df_master.withColumn("InitRiskLevel", cal_risk("ChiName", "FundTypeCode1", "FundTypeCode2", "RiskLevel"))
+    # 特殊基金计算
+    df_master = df_master.withColumn("InitRiskLevel", cal_speical_fund_risk("ChiName", "SecurityCode", "InitRiskLevel"))
 
     return df_master
