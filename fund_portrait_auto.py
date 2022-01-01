@@ -65,4 +65,4 @@ if __name__ == "__main__":
 
     
     f = Fund_Label()
-    f.fund_risk_estimate(df_master, risk_mapping)
+    f.fund_risk_estimate(df_fundarchives, df_secumain, df_fundtype, df_fundrisklevel, df_fundtypechangenew, risk_mapping)
