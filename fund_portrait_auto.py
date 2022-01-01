@@ -32,6 +32,7 @@ secumain_schema = StructType([
 fundtype_schema = StructType([
     StructField("FundTypeCode", IntegerType(), True),
     StructField("FundTypeName", StringType(), False),
+    StructField("FNodeCode", IntegerType(), False),
     StructField("Level", IntegerType(), False),
     StructField("IfExecuted", IntegerType(), False)
 ])
@@ -50,7 +51,9 @@ fundtypechangenew_schema = StructType([
 
 if __name__ == "__main__":
     print("This is a Spark Application")
-    spark = SparkSession.builder.getOrCreate()
+    spark = SparkSession.builder.master("local[4]")\
+                        .appName('FundLabel')\
+                        .getOrCreate()
 
     df_fundarchives = spark.read.format("csv").option("header", True).schema(fundarchives_schema).load(fundarchives_filePath)
     df_secumain = spark.read.format("csv").option("header", True).option("charset", "cp936").schema(secumain_schema).load(secumain_filePath)
