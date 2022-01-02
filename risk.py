@@ -2,34 +2,56 @@ from pyspark.sql.functions import *
 from pyspark.sql import Window
 
 @udf
-def cal_risk(ChiName, FundTypeCode1, FundTypeCode2, RiskLevel):
+def cal_risk(ChiName, FundTypeCode1, FundTypeCode2, RiskLevel, ShareProperties):
     """
     重新定义一般基金
     检查ChiName, FundTypeCode1, FundTypeCode2字段, 根据搜索关键字
     覆盖原本的风险等级
     """
-    # QDII基金
-    if FundTypeCode1 == 14 and FundTypeCode2 == 1450:
-        # 商品QDII基金（除黄金QDII）
-        if "原油" in ChiName or "商品" in ChiName or "通胀" in ChiName:
-            return "R5"
-        # 黄金QDII基金
-        elif "黄金" in ChiName:
-            return "R3"
-        else:
-            return RiskLevel
-        
-    elif FundTypeCode1 == "17":
-        if "期货" in ChiName:
-            return "R5"
-        elif "黄金" in ChiName or "上海金" in ChiName:
-            return "R3"
-        else:
-            return RiskLevel
-    # 所有FOF基金都为R3    
-    elif FundTypeCode1 == "15":
+    # 所有FOF基金都为R3
+    if FundTypeCode1 == 15:
         return "R3"
-    
+
+    # 找到所有新分类
+    elif RiskLevel is None:
+        # QDII基金
+        if FundTypeCode1 == 14 and FundTypeCode2 == 1450:
+            # 商品QDII基金（除黄金QDII）
+            if "原油" in ChiName or "商品" in ChiName or "通胀" in ChiName:
+                return "R5-商品QDII基金（除黄金QDII）"
+            # 黄金QDII基金
+            elif "黄金" in ChiName:
+                return "R3-黄金QDII基金"
+            else:
+                return RiskLevel
+       
+       # 商品基金新分类    
+        elif FundTypeCode1 == 17:
+            if "期货" in ChiName:
+                return "R5-商品基金（除黄金基金）"
+            elif "黄金" in ChiName or "上海金" in ChiName:
+                return "R3-黄金基金"
+            else:
+                return RiskLevel
+
+        # 债券基金新分类
+        elif FundTypeCode1 == 12:
+            if "可转换债券" in ChiName and "分级" in ChiName and ShareProperties == 1:
+                return "R3-可转债分级子基金（优先份额）"
+
+            elif "可转换债券" in ChiName and "分级" in ChiName and ShareProperties == 2:
+                return "R5-可转债分级子基金（进取份额）"
+
+            elif "可转换债券" not in ChiName and "分级" in ChiName and ShareProperties == 1:
+                return "R3-普通债券分级子基金（优先份额）"
+            
+            elif "可转换债券" not in ChiName and "分级" in ChiName and ShareProperties == 2:
+                return "R4-普通债券分级子基金（进取份额）"
+
+            elif FundTypeCode2 == 1220 and "可转换债券" in ChiName:
+                return "R3-可转债指数基金"
+
+    # 不是新分类保持配置中的分类
     else:
         return RiskLevel
 
@@ -115,7 +137,7 @@ def pre_fund_risk_calc(df_master, risk_mapping):
     # 通过risk配置表中确定新的分类
     df_master = df_master.join(risk_mapping, ["FundTypeName1", "FundTypeName2", "FundTypeName3"], "left")
     # 一般基金计算
-    df_master = df_master.withColumn("InitRiskLevel", cal_risk("ChiName", "FundTypeCode1", "FundTypeCode2", "RiskLevel"))
+    df_master = df_master.withColumn("InitRiskLevel", cal_risk("ChiName", "FundTypeCode1", "FundTypeCode2", "RiskLevel", "ShareProperties"))
     # 特殊基金计算
     df_master = df_master.withColumn("InitRiskLevel", cal_speical_fund_risk("ChiName", "SecurityCode", "InitRiskLevel"))
 
