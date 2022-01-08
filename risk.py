@@ -15,8 +15,10 @@ def cal_risk(ChiName, FundTypeCode1, FundTypeCode2, RiskLevel, ShareProperties):
 
         # QDII基金
     elif FundTypeCode1 == 14 and FundTypeCode2 == 1450:
+        if ChiName is None:
+            return RiskLevel
         # 商品QDII基金（除黄金QDII）
-        if "原油" in ChiName or "商品" in ChiName or "通胀" in ChiName:
+        elif "原油" in ChiName or "商品" in ChiName or "通胀" in ChiName:
             return "R5-QDII基金-商品QDII基金-商品QDII基金（除黄金QDII）"
         # 黄金QDII基金
         elif "黄金" in ChiName:
@@ -80,15 +82,27 @@ def cal_speical_fund_risk(ChiName, SecurityCode, InitRiskLevel):
     else:
         return InitRiskLevel
 
+@udf
+def tranform_text(PreviousFundTypeName3):
+    if PreviousFundTypeName3:
+        return ("由%s转型而来")%(PreviousFundTypeName3)
+    else:
+        return 
 
-def pre_process_data(df_fundarchives, df_secumain, df_fundtype, df_fundrisklevel, df_fundtypechangenew):
+def previous_quarter(ref):
+    if ref.month < 4:
+        return datetime(ref.year-1, 12, 31).strftime('%Y-%m-%d'), datetime(ref.year-1, 9, 30).strftime('%Y-%m-%d')
+    elif ref.month < 7:
+        return datetime(ref.year, 3, 31).strftime('%Y-%m-%d'), datetime(ref.year-1, 12, 31).strftime('%Y-%m-%d')
+    elif ref.month < 10:
+        return datetime(ref.year, 6, 30).strftime('%Y-%m-%d'), datetime(ref.year, 3, 31).strftime('%Y-%m-%d')
+    return datetime(ref.year, 9, 30).strftime('%Y-%m-%d'), datetime(ref.year, 6, 30).strftime('%Y-%m-%d')
+
+
+def pre_process_data(df_fundarchives, df_secumain, df_fundtype, df_fundrisklevel, df_fundtypechangenew, date_threshod):
     """
     根据query来整合基金的type和名称
     """
-    date_threshod = datetime.now().strftime('%Y-%m-%d')
-
-    # EstablishmentDate <= date_threshod AND (ExpireDate IS NULL OR ExpireDate > date_threshod
-    df_fundarchives = df_fundarchives.filter((col("EstablishmentDate") <= date_threshod) & ((col("ExpireDate") > date_threshod) | (col("ExpireDate").isNull())))
 
     # SecuCategory IN (8,13) and ListedState IN (1,9)
     df_secumain = df_secumain.filter(((col("SecuCategory") == 8) | (col("SecuCategory") == 13)) & ((col("ListedState") == 1) | (col("ListedState") == 9)))
@@ -135,7 +149,7 @@ def pre_process_data(df_fundarchives, df_secumain, df_fundtype, df_fundrisklevel
     return df_master
 
 
-def pre_fund_risk_calc(df_master, risk_mapping):
+def pre_fund_risk_calc(df_master, risk_mapping, date_threshod, date_threshod_2):
     """
     基金事前风险计算
     """
@@ -157,7 +171,24 @@ def pre_fund_risk_calc(df_master, risk_mapping):
                                                      .otherwise(col("FundTypeName2")))\
                          .withColumn("FundTypeName1", when(col("FundTypeName1").contains("债券基金"), regexp_replace(df_master.FundTypeName1,'债券基金','债券基金（不含封闭式）'))
                                                      .otherwise(col("FundTypeName1")))
+
+    # 根据主代码找转型基金
+    df_master_J = df_master.filter((col("MainCode").endswith("J")) & (col("ExpireDate") > date_threshod_2) & (col("MainCode") == col("SecurityCode")))\
+                           .select(col("FundTypeName3").alias("PreviousFundTypeName3"), 
+                                   col("MainCode").alias("MainCodeJ"),
+                                   col("ExpireDate").alias("ExpireDateJ"))
+                                                                         
+    df_master_J = df_master_J.withColumn("MainCodeJoin", substring("MainCodeJ", 0, 6))
+
+    df_master = df_master.filter((col("EstablishmentDate") <= date_threshod) & ((col("ExpireDate") > date_threshod) | (col("ExpireDate").isNull())))
     # 特殊基金计算
     df_master = df_master.withColumn("InitRiskLevel", cal_speical_fund_risk("ChiName", "SecurityCode", "InitRiskLevel"))
+
+    # 根据主代码找转型基金
+    df_master =  df_master.alias("dfm").join(df_master_J.alias("dfmj"), [col("dfm.MainCode") == col("dfmj.MainCodeJoin"),
+                                                                         col("dfm.EstablishmentDate") == col("dfmj.ExpireDateJ"),
+                                                                         col("dfm.EstablishmentDateII").isNotNull()], "left")
+
+    df_master = df_master.withColumn("ChangeReasons", tranform_text("PreviousFundTypeName3"))
 
     return df_master
