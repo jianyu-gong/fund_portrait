@@ -8,6 +8,7 @@ secumain_filePath = "../data/secumain.csv"
 fundtype_filePath = "../data/fundtype.csv"
 fundrisklevel_filePath = "../data/fundrisklevel.csv"
 fundtypechangenew_filePath = "../data/fundtypechangenew.csv"
+mainfinancialindex_filePath = "../data/mainfinancialindex.csv"
 
 fundarchives_schema = StructType([
     StructField("InnerCode", IntegerType(), True),
@@ -49,17 +50,24 @@ fundtypechangenew_schema = StructType([
     StructField("StartDate", DateType(), False)
 ])
 
+mainfinancialindex_schema = StructType([
+    StructField("InnerCode", IntegerType(), True),
+    StructField("EndDate", DateType(), False),
+    StructField("NetAssetsValue", DecimalType(18,3), False)
+])
+
 if __name__ == "__main__":
     print("This is a Spark Application")
     spark = SparkSession.builder.master("local[4]")\
                         .appName('FundLabel')\
                         .getOrCreate()
 
-    df_fundarchives = spark.read.format("csv").option("header", True).schema(fundarchives_schema).load(fundarchives_filePath)
-    df_secumain = spark.read.format("csv").option("header", True).option("charset", "cp936").schema(secumain_schema).load(secumain_filePath)
+    df_fundarchives = spark.read.format("csv").option("header", False).schema(fundarchives_schema).load(fundarchives_filePath)
+    df_secumain = spark.read.format("csv").option("header", False).schema(secumain_schema).load(secumain_filePath)
     df_fundtype = spark.read.format("csv").option("header", True).option("charset", "cp936").schema(fundtype_schema).load(fundtype_filePath)
     df_fundrisklevel = spark.read.format("csv").option("header", True).load(fundrisklevel_filePath)
     df_fundtypechangenew = spark.read.format("csv").option("header", True).schema(fundtypechangenew_schema).load(fundtypechangenew_filePath)
+    df_mainfinancialindex = spark.read.format("csv").option("header", False).schema(mainfinancialindex_schema).load(mainfinancialindex_filePath)
     
     with open('bound_portrait_conf.yaml', 'r', encoding='utf8') as f:
         mapping = yaml.load(f, yaml.Loader)
