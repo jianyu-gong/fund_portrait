@@ -5,7 +5,7 @@ class Fund_Label(object):
 
     def fund_risk_estimate(self, df_fundarchives, df_secumain, df_fundtype, df_fundrisklevel, df_fundtypechangenew, risk_mapping):
         # 根据当前日期取上一季度的最后一天
-        date_threshod, date_threshod_2 = previous_quarter(datetime.now())
+        date_threshod, date_threshod_2, date_threshod_3, date_threshod_4 = previous_quarter(datetime.now())
         # 预处理
         print("正在预处理数据")
         master_df = pre_process_data(df_fundarchives, df_secumain, df_fundtype, df_fundrisklevel, df_fundtypechangenew, date_threshod)

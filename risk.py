@@ -91,12 +91,12 @@ def tranform_text(PreviousFundTypeName3):
 
 def previous_quarter(ref):
     if ref.month < 4:
-        return datetime(ref.year-1, 12, 31).strftime('%Y-%m-%d'), datetime(ref.year-1, 9, 30).strftime('%Y-%m-%d')
+        return datetime(ref.year-1, 12, 31).strftime('%Y-%m-%d'), datetime(ref.year-1, 9, 30).strftime('%Y-%m-%d'), datetime(ref.year-1, 6, 30).strftime('%Y-%m-%d'), datetime(ref.year-1, 3, 31).strftime('%Y-%m-%d')
     elif ref.month < 7:
-        return datetime(ref.year, 3, 31).strftime('%Y-%m-%d'), datetime(ref.year-1, 12, 31).strftime('%Y-%m-%d')
+        return datetime(ref.year, 3, 31).strftime('%Y-%m-%d'), datetime(ref.year-1, 12, 31).strftime('%Y-%m-%d'), datetime(ref.year-1, 9, 30).strftime('%Y-%m-%d'), datetime(ref.year-1, 6, 30).strftime('%Y-%m-%d')
     elif ref.month < 10:
-        return datetime(ref.year, 6, 30).strftime('%Y-%m-%d'), datetime(ref.year, 3, 31).strftime('%Y-%m-%d')
-    return datetime(ref.year, 9, 30).strftime('%Y-%m-%d'), datetime(ref.year, 6, 30).strftime('%Y-%m-%d')
+        return datetime(ref.year, 6, 30).strftime('%Y-%m-%d'), datetime(ref.year, 3, 31).strftime('%Y-%m-%d'), datetime(ref.year-1, 12, 31).strftime('%Y-%m-%d'), datetime(ref.year-1, 9, 30).strftime('%Y-%m-%d')
+    return datetime(ref.year, 9, 30).strftime('%Y-%m-%d'), datetime(ref.year, 6, 30).strftime('%Y-%m-%d'), datetime(ref.year, 3, 31).strftime('%Y-%m-%d'), datetime(ref.year-1, 12, 31).strftime('%Y-%m-%d')
 
 
 def pre_process_data(df_fundarchives, df_secumain, df_fundtype, df_fundrisklevel, df_fundtypechangenew, date_threshod):
