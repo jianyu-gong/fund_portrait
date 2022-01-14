@@ -9,6 +9,7 @@ fundtype_filePath = "../data/fundtype.csv"
 fundrisklevel_filePath = "../data/fundrisklevel.csv"
 fundtypechangenew_filePath = "../data/fundtypechangenew.csv"
 mainfinancialindex_filePath = "../data/mainfinancialindex.csv"
+last_qrt_filePath = "../data/基金风险等级三季度.csv"
 
 fundarchives_schema = StructType([
     StructField("InnerCode", IntegerType(), True),
@@ -56,6 +57,14 @@ mainfinancialindex_schema = StructType([
     StructField("NetAssetsValue", DecimalType(18,3), False)
 ])
 
+last_qrt_schema = StructType([
+    StructField("InnerCode", IntegerType(), True),
+    StructField("FundSizeStatus", IntegerType(), False),
+    StructField("SDStatus", IntegerType(), False),
+    StructField("HigherRiskLevel", IntegerType(), False),
+    StructField("HigherRiskLevelName", StringType(), False)
+])
+
 if __name__ == "__main__":
     print("This is a Spark Application")
     spark = SparkSession.builder.master("local[4]")\
@@ -68,6 +77,7 @@ if __name__ == "__main__":
     df_fundrisklevel = spark.read.format("csv").option("header", True).load(fundrisklevel_filePath)
     df_fundtypechangenew = spark.read.format("csv").option("header", True).schema(fundtypechangenew_schema).load(fundtypechangenew_filePath)
     df_mainfinancialindex = spark.read.format("csv").option("header", False).schema(mainfinancialindex_schema).load(mainfinancialindex_filePath)
+    df_last_qrt = spark.read.format("csv").option("header", True).option("charset", "cp936").schema(last_qrt_schema).load(last_qrt_filePath)
     
     with open('bound_portrait_conf.yaml', 'r', encoding='utf8') as f:
         mapping = yaml.load(f, yaml.Loader)
@@ -76,4 +86,4 @@ if __name__ == "__main__":
 
     
     f = Fund_Label()
-    f.fund_risk_estimate(df_fundarchives, df_secumain, df_fundtype, df_fundrisklevel, df_fundtypechangenew, risk_mapping)
+    f.fund_risk_estimate(df_fundarchives, df_secumain, df_fundtype, df_fundrisklevel, df_fundtypechangenew, risk_mapping, df_mainfinancialindex, df_last_qrt)

@@ -89,6 +89,40 @@ def tranform_text(PreviousFundTypeName3):
     else:
         return 
 
+@udf
+def net_asset_flag(ForthQrtNV, ThirdQrtNV, SecondQrtNV, LastQrtNV):
+    try:
+        if LastQrtNV < 1000:
+            return 1
+        elif LastQrtNV < 5000 and SecondQrtNV < 5000 and ThirdQrtNV < 5000 and ForthQrtNV < 5000:
+            return 1
+        elif LastQrtNV > 5000 and SecondQrtNV > 5000 and ThirdQrtNV > 5000 and ForthQrtNV > 5000:
+            return 2
+        else:
+            return 0
+    except:
+        return 0
+
+
+@udf
+def final_risk(InitRiskLevel, EstablishmentLength, NetAssetFlag, FundSizeStatus, SDStatus, HigherRiskLevel):
+    # 如果基金成立未满1.5年，基础风险等级及为风险等级
+    if EstablishmentLength < 18:
+        return InitRiskLevel
+    # 如果基金成立满1.5年但小于3.5年
+    elif EstablishmentLength >= 18 and EstablishmentLength <= 42:
+        # 如果之前被调整过并且触发回调条件
+        if FundSizeStatus == 1 and NetAssetFlag == 2:
+            risk_level = (HigherRiskLevel - 1) if (HigherRiskLevel - 1) > 0 else 1
+            return "R"+ str(risk_level) + "-规模上升"
+        # 如果之前没被调整过并且触发上调条件
+        elif FundSizeStatus == 0 and NetAssetFlag == 1:
+            risk_level = (HigherRiskLevel + 1) if (HigherRiskLevel + 1) < 5 else 5
+            return "R"+ str(risk_level) + "-规模下降"
+        else:
+            return "R" + str(HigherRiskLevel)
+
+
 def previous_quarter(ref):
     if ref.month < 4:
         return datetime(ref.year-1, 12, 31).strftime('%Y-%m-%d'), datetime(ref.year-1, 9, 30).strftime('%Y-%m-%d'), datetime(ref.year-1, 6, 30).strftime('%Y-%m-%d'), datetime(ref.year-1, 3, 31).strftime('%Y-%m-%d')
@@ -190,5 +224,37 @@ def pre_fund_risk_calc(df_master, risk_mapping, date_threshod, date_threshod_2):
                                                                          col("dfm.EstablishmentDateII").isNotNull()], "left")
 
     df_master = df_master.withColumn("ChangeReasons", tranform_text("PreviousFundTypeName3"))
+    df_master = df_master.withColumn("FundTypeName2", when(col("FundTypeName2").contains("FOF"), regexp_replace(df_master.FundTypeName2,'FOF','股票FOF'))
+                                                     .otherwise(col("FundTypeName2")))\
+                         .withColumn("FundTypeName3", when(col("FundTypeName3").contains("FOF"), regexp_replace(df_master.FundTypeName1,'FOF','股票FOF'))
+                                                     .otherwise(col("FundTypeName1")))\
+                         .withColumn("SecurityCode", when(col("SecurityCode").contains("J"), regexp_replace(df_master.SecurityCode,'J',''))
+                                                     .otherwise(col("SecurityCode")))
+
+    return df_master
+
+def post_fund_risk_calc(df_master, date_threshod_2, date_threshod_3, date_threshod_4, date_threshod_5, date_threshod, df_mainfinancialindex, df_last_qrt):
+    """
+    基金事后风险计算
+    """
+    # 选取过去一年的所有净资产
+    df_mainfinancialindex = df_mainfinancialindex.filter((col("EndDate") > date_threshod_5) & (col("EndDate") <= date_threshod))
+    df_mainfinancialindex = df_mainfinancialindex.withColumn("NetAssetsValue", col("NetAssetsValue")/10000) \
+                                             .withColumn("Qrt", when(col("EndDate") > date_threshod_2, "LastQrtNV")
+                                                                             .when(col("EndDate") > date_threshod_3, "SecondQrtNV")
+                                                                             .when(col("EndDate") > date_threshod_4, "ThirdQrtNV")
+                                                                             .otherwise("ForthQrtNV"))
+    df_mainfinancialindex = df_mainfinancialindex.groupBy("InnerCode", "Qrt") \
+                                                 .agg(sum("NetAssetsValue").alias("NetAssetsValueSum"))
+    df_mainfinancialindex = df_mainfinancialindex.groupBy("InnerCode").pivot("Qrt").sum("NetAssetsValueSum")
+
+    # 将过去四个季度的净资产join到master table
+    df_master = df_master.join(df_mainfinancialindex, ["InnerCode"], "left")
+    df_master = df_master.withColumn("EstablishmentLength", months_between(to_date(lit(date_threshod)), col("EstablishmentDate")))
+    df_master = df_master.withColumn("NetAssetFlag", net_asset_flag("ForthQrtNV", "ThirdQrtNV", "SecondQrtNV", "LastQrtNV"))
+
+    # 调取上一季度的结果
+    df_last_qrt = df_last_qrt.filter(~((col("FundSizeStatus") == 0) & (col("SDStatus") == 0)))
+    df_master = df_master.join(df_last_qrt, ["InnerCode"], "left")
 
     return df_master
