@@ -105,7 +105,7 @@ def net_asset_flag(ForthQrtNV, ThirdQrtNV, SecondQrtNV, LastQrtNV):
 
 
 @udf
-def final_risk(InitRiskLevel, EstablishmentLength, NetAssetFlag, FundSizeStatus, SDStatus, HigherRiskLevel):
+def final_risk(InitRiskLevel, EstablishmentLength, NetAssetFlag, FundSizeStatus, SDStatus, SDFlag):
     # 如果基金成立未满1.5年，基础风险等级及为风险等级
     if EstablishmentLength < 18:
         return InitRiskLevel
@@ -113,14 +113,112 @@ def final_risk(InitRiskLevel, EstablishmentLength, NetAssetFlag, FundSizeStatus,
     elif EstablishmentLength >= 18 and EstablishmentLength <= 42:
         # 如果之前被调整过并且触发回调条件
         if FundSizeStatus == 1 and NetAssetFlag == 2:
-            risk_level = (HigherRiskLevel - 1) if (HigherRiskLevel - 1) > 0 else 1
-            return "R"+ str(risk_level) + "-规模上升"
+            return InitRiskLevel + "-规模上升-0-0"
         # 如果之前没被调整过并且触发上调条件
         elif FundSizeStatus == 0 and NetAssetFlag == 1:
-            risk_level = (HigherRiskLevel + 1) if (HigherRiskLevel + 1) < 5 else 5
-            return "R"+ str(risk_level) + "-规模下降"
+            risk_level = (int(InitRiskLevel[-1] )+ 1) if (int(InitRiskLevel[-1]) + 1) < 5 else 5
+            return "R"+ str(risk_level) + "-规模下降-1-0"
         else:
-            return "R" + str(HigherRiskLevel)
+            return InitRiskLevel
+    elif EstablishmentLength > 42:
+        # 如果之前被调整过并且触发回调条件
+        if FundSizeStatus == 1 or SDStatus == 1: 
+            if NetAssetFlag == 2 and InitRiskLevel in ["R2", "R3", "R4"] and SDFlag == 2:
+                return InitRiskLevel + "-规模上升,波动率下降-0-0"
+            else:
+                risk_level = (int(InitRiskLevel[-1] )+ 1) if (int(InitRiskLevel[-1]) + 1) < 5 else 5
+                return "R" + str(risk_level)
+        # 如果之前没被调整过并触发两个上调条件
+        elif FundSizeStatus == 0 and SDStatus == 0 and NetAssetFlag == 1 and InitRiskLevel in ["R2", "R3", "R4"] and SDFlag == 1:
+            risk_level = (int(InitRiskLevel[-1] )+ 1) if (int(InitRiskLevel[-1]) + 1) < 5 else 5
+            return "R"+ str(risk_level) + "-规模下降,波动率上升-1-1"
+        # 如果之前没被调整过并触发规模上调条件
+        elif FundSizeStatus == 0 and SDStatus == 0 and NetAssetFlag == 1:
+            risk_level = (int(InitRiskLevel[-1] )+ 1) if (int(InitRiskLevel[-1]) + 1) < 5 else 5
+            return "R"+ str(risk_level) + "-规模下降-1-0"
+        # 如果之前没被调整过并触发规模波动条件
+        elif FundSizeStatus == 0 and SDStatus == 0 and InitRiskLevel in ["R2", "R3", "R4"] and SDFlag == 1:
+            risk_level = (int(InitRiskLevel[-1] )+ 1) if (int(InitRiskLevel[-1]) + 1) < 5 else 5
+            return "R"+ str(risk_level) + "-波动率上升-0-1"
+        else:
+            return InitRiskLevel
+
+
+@udf
+def volatility_calculation(SubProduct):
+    result = 1
+    for product in SubProduct:
+        result *= product
+    return result - 1
+
+
+@udf
+def sd_flag(LastQrtSD, SecondQrtSD, ThirdQrtSD, ForthQrtSD, LastQrtStandard, SecondQrtStandard, ThirdQrtStandard, ForthQrtStandard):
+    try:
+        if LastQrtSD > LastQrtStandard and SecondQrtSD > SecondQrtStandard and ThirdQrtSD > ThirdQrtStandard and ForthQrtSD > ForthQrtStandard:
+            return 1
+        elif LastQrtSD <= LastQrtStandard and SecondQrtSD <= SecondQrtStandard and ThirdQrtSD <= ThirdQrtStandard and ForthQrtSD <= ForthQrtStandard:
+            return 2
+        else:
+            return 0
+    except:
+        return 0
+
+
+@udf
+def level_mapping(level):
+    if level is None:
+        return "未知"
+    mapping = {
+        "R1": "低",
+        "R2": "较低",
+        "R3": "中等",
+        "R4": "较高",
+        "R5": "高"
+    }
+    return mapping[level]
+
+
+def aggVolatility(df, quarter, columnName): 
+    if quarter == 4:
+        aliasColumn = "LastQrtSD"
+    elif quarter == 3:
+        aliasColumn = "SecondQrtSD"
+    elif quarter == 2:
+        aliasColumn = "ThirdQrtSD"
+    elif quarter == 1:
+        aliasColumn = "ForthQrtSD"
+        
+    df = df.withColumn("weekNum", floor(datediff(col("TradingDay"), lit("2018-02-26"))/7)) \
+                 .withColumn("NVRDailyGrowthRatePlus", col(columnName)/100 + 1)
+    df = df.groupBy("InnerCode", "weekNum").agg(collect_list("NVRDailyGrowthRatePlus").alias("SubProduct"))
+    df = df.withColumn("VolatilityByWeek", volatility_calculation("SubProduct"))
+    df = df.groupBy("InnerCode").agg(stddev("VolatilityByWeek").alias(aliasColumn))
+    
+    return df
+
+
+def volatilityByQuarter(df, date_threshod, date_threshod_2, date_threshod_3, date_threshod_4, date_threshod_6, date_threshod_7, date_threshod_8, date_threshod_9, datasetName):
+    if datasetName == "unitnvrestored":
+        columnName = "NVRDailyGrowthRate"
+    else:
+        columnName = "ChangePCT"
+        
+    df_q4 = df.filter((col("TradingDay") > date_threshod_6) & (col("TradingDay") <= date_threshod))
+    df_q3 = df.filter((col("TradingDay") > date_threshod_7) & (col("TradingDay") <= date_threshod_2))
+    df_q2 = df.filter((col("TradingDay") > date_threshod_8) & (col("TradingDay") <= date_threshod_3))
+    df_q1 = df.filter((col("TradingDay") > date_threshod_9) & (col("TradingDay") <= date_threshod_4))
+    
+    df_q4 = aggVolatility(df_q4, 4, columnName)
+    df_q3 = aggVolatility(df_q3, 3, columnName)
+    df_q2 = aggVolatility(df_q2, 2, columnName)
+    df_q1 = aggVolatility(df_q1, 1, columnName)
+    
+    df = df_q4.join(df_q3, ["InnerCode"], "inner") \
+              .join(df_q2, ["InnerCode"], "inner") \
+              .join(df_q1, ["InnerCode"], "inner")
+    
+    return df
 
 
 def previous_quarter(ref):
@@ -223,7 +321,7 @@ def pre_fund_risk_calc(df_master, risk_mapping, date_threshod, date_threshod_2):
                                                                          col("dfm.EstablishmentDate") == col("dfmj.ExpireDateJ"),
                                                                          col("dfm.EstablishmentDateII").isNotNull()], "left")
 
-    df_master = df_master.withColumn("ChangeReasons", tranform_text("PreviousFundTypeName3"))
+    df_master = df_master.withColumn("ChangeReason", tranform_text("PreviousFundTypeName3"))
     df_master = df_master.withColumn("FundTypeName2", when(col("FundTypeName2").contains("FOF"), regexp_replace(df_master.FundTypeName2,'FOF','股票FOF'))
                                                      .otherwise(col("FundTypeName2")))\
                          .withColumn("FundTypeName3", when(col("FundTypeName3").contains("FOF"), regexp_replace(df_master.FundTypeName1,'FOF','股票FOF'))
@@ -233,17 +331,18 @@ def pre_fund_risk_calc(df_master, risk_mapping, date_threshod, date_threshod_2):
 
     return df_master
 
-def post_fund_risk_calc(df_master, date_threshod_2, date_threshod_3, date_threshod_4, date_threshod_5, date_threshod, df_mainfinancialindex, df_last_qrt):
+def post_fund_risk_calc(df_master, date_threshod_2, date_threshod_3, date_threshod_4, date_threshod_5, date_threshod, df_mainfinancialindex, df_last_qrt, df_unitnvrestored_master, zzzs_dict):
     """
     基金事后风险计算
     """
     # 选取过去一年的所有净资产
     df_mainfinancialindex = df_mainfinancialindex.filter((col("EndDate") > date_threshod_5) & (col("EndDate") <= date_threshod))
     df_mainfinancialindex = df_mainfinancialindex.withColumn("NetAssetsValue", col("NetAssetsValue")/10000) \
-                                             .withColumn("Qrt", when(col("EndDate") > date_threshod_2, "LastQrtNV")
-                                                                             .when(col("EndDate") > date_threshod_3, "SecondQrtNV")
-                                                                             .when(col("EndDate") > date_threshod_4, "ThirdQrtNV")
-                                                                             .otherwise("ForthQrtNV"))
+                                                 .withColumn("Qrt", when(col("EndDate") > date_threshod_2, "LastQrtNV")
+                                                                   .when(col("EndDate") > date_threshod_3, "SecondQrtNV")
+                                                                   .when(col("EndDate") > date_threshod_4, "ThirdQrtNV")
+                                                                   .otherwise("ForthQrtNV"))
+
     df_mainfinancialindex = df_mainfinancialindex.groupBy("InnerCode", "Qrt") \
                                                  .agg(sum("NetAssetsValue").alias("NetAssetsValueSum"))
     df_mainfinancialindex = df_mainfinancialindex.groupBy("InnerCode").pivot("Qrt").sum("NetAssetsValueSum")
@@ -254,7 +353,92 @@ def post_fund_risk_calc(df_master, date_threshod_2, date_threshod_3, date_thresh
     df_master = df_master.withColumn("NetAssetFlag", net_asset_flag("ForthQrtNV", "ThirdQrtNV", "SecondQrtNV", "LastQrtNV"))
 
     # 调取上一季度的结果
-    df_last_qrt = df_last_qrt.filter(~((col("FundSizeStatus") == 0) & (col("SDStatus") == 0)))
     df_master = df_master.join(df_last_qrt, ["InnerCode"], "left")
+    df_master = df_master.join(df_unitnvrestored_master, ["InnerCode"], "left")
+
+    # 计算波动率倍数
+    df_master = df_master.withColumn("LastQrtSDFactor",  when(col("InitRiskLevel") == "R2", col("LastQrtSD") / (0.8 * zzzs_dict[2968][0] + 0.2 * zzzs_dict[14110][0]))
+                                                        .when(col("InitRiskLevel") == "R3", col("LastQrtSD") / zzzs_dict[14110][0])
+                                                        .when(col("InitRiskLevel") == "R4", col("LastQrtSD") / zzzs_dict[14110][0])
+                                                        .otherwise(0)) \
+                         .withColumn("SecondQrtSDFactor",  when(col("InitRiskLevel") == "R2", col("SecondQrtSD") / (0.8 * zzzs_dict[2968][1] + 0.2 * zzzs_dict[14110][1]))
+                                                          .when(col("InitRiskLevel") == "R3", col("SecondQrtSD") / zzzs_dict[14110][1])
+                                                          .when(col("InitRiskLevel") == "R4", col("SecondQrtSD") / zzzs_dict[14110][1])
+                                                          .otherwise(0)) \
+                         .withColumn("ThirdQrtSDFactor",  when(col("InitRiskLevel") == "R2", col("ThirdQrtSD") / (0.8 * zzzs_dict[2968][2] + 0.2 * zzzs_dict[14110][2]))
+                                                         .when(col("InitRiskLevel") == "R3", col("ThirdQrtSD") / zzzs_dict[14110][2])
+                                                         .when(col("InitRiskLevel") == "R4", col("ThirdQrtSD") / zzzs_dict[14110][2])
+                                                         .otherwise(0)) \
+                         .withColumn("ForthQrtSDFactor",  when(col("InitRiskLevel") == "R2", col("ForthQrtSD") / (0.8 * zzzs_dict[2968][3] + 0.2 * zzzs_dict[14110][3]))
+                                                         .when(col("InitRiskLevel") == "R3", col("ForthQrtSD") / zzzs_dict[14110][3])
+                                                         .when(col("InitRiskLevel") == "R4", col("ForthQrtSD") / zzzs_dict[14110][3])
+                                                         .otherwise(0))
+
+    df_master = df_master.withColumn("LastQrtStandard",  when(col("InitRiskLevel") == "R2", 1.4 * (0.8 * zzzs_dict[2968][0] + 0.2 * zzzs_dict[14110][0]))
+                                                        .when(col("InitRiskLevel") == "R3", 1.4 * zzzs_dict[14110][0])
+                                                        .when(col("InitRiskLevel") == "R4", 3 * zzzs_dict[14110][0])
+                                                        .otherwise(0)) \
+                         .withColumn("SecondQrtStandard",  when(col("InitRiskLevel") == "R2", 1.4 * (0.8 * zzzs_dict[2968][1] + 0.2 * zzzs_dict[14110][1]))
+                                                          .when(col("InitRiskLevel") == "R3", 1.4 * zzzs_dict[14110][1])
+                                                          .when(col("InitRiskLevel") == "R4", 3 * zzzs_dict[14110][1])
+                                                          .otherwise(0)) \
+                         .withColumn("ThirdQrtStandard",  when(col("InitRiskLevel") == "R2", 1.4 * (0.8 * zzzs_dict[2968][2] + 0.2 * zzzs_dict[14110][2]))
+                                                         .when(col("InitRiskLevel") == "R3", 1.4 * zzzs_dict[14110][2])
+                                                         .when(col("InitRiskLevel") == "R4", 3 * zzzs_dict[14110][2])
+                                                         .otherwise(0)) \
+                         .withColumn("ForthQrtStandard",  when(col("InitRiskLevel") == "R2", 1.4 * (0.8 * zzzs_dict[2968][3] + 0.2 * zzzs_dict[14110][3]))
+                                                         .when(col("InitRiskLevel") == "R3", 1.4 * zzzs_dict[14110][3])
+                                                         .when(col("InitRiskLevel") == "R4", 3 * zzzs_dict[14110][3])
+                                                         .otherwise(0))
+    
+    df_master = df_master.withColumn("SDFlag", sd_flag("LastQrtSD", "SecondQrtSD", "ThirdQrtSD", "ForthQrtSD", "LastQrtStandard", "SecondQrtStandard", "ThirdQrtStandard", "ForthQrtStandard"))
+    df_master = df_master.withColumn("SDNote", final_risk("InitRiskLevel", "EstablishmentLength", "NetAssetFlag", "FundSizeStatus", "SDStatus", "SDFlag"))
+
+    df_master = df_master.withColumn("SDStatus", when(col("SDNote").contains("-"), split(col("SDNote"), "-").getItem(3))
+                                                .otherwise(col("SDStatus")))\
+                         .withColumn("FundSizeStatus", when(col("SDNote").contains("-"), split(col("SDNote"), "-").getItem(2))
+                                                      .otherwise(col("FundSizeStatus")))\
+                         .withColumn("ChangeReason", when(col("SDNote").contains("-"), split(col("SDNote"), "-").getItem(1))
+                                                    .otherwise(col("ChangeReason")))\
+                         .withColumn("FinalRiskLevel", when(col("SDNote").contains("-"), split(col("SDNote"), "-").getItem(0))
+                                                      .otherwise(col("SDNote")))\
+                         .withColumn("ChangeDirection", when(col("ChangeReason").contains("规模上升"), lit(-1))
+                                                       .when(col("ChangeReason").contains("波动率下降"), lit(-1))
+                                                       .when(col("ChangeReason").contains("规模下降"), lit(1))
+                                                       .when(col("ChangeReason").contains("波动率上升"), lit(1))
+                                                       .otherwise(lit(0)))
+    df_master = df_master.drop("RiskLevel")\
+                         .withColumnRenamed("FundTypeName1", "FirstCategoryName")\
+                         .withColumnRenamed("FundTypeName2", "SecondCategoryName")\
+                         .withColumnRenamed("FundTypeName3", "ThirdCategoryName")\
+                         .withColumnRenamed("FundTypeCode1", "FirstCategory")\
+                         .withColumnRenamed("FundTypeCode2", "SecondCategory")\
+                         .withColumnRenamed("FundTypeCode3", "ThirdCategory")\
+                         .withColumnRenamed("InitRiskLevel", "BasicRiskLevel")\
+                         .withColumnRenamed("FinalRiskLevel", "RiskLevel")\
+                         .withColumnRenamed("SecurityCode", "SecuCode")\
+                         .withColumnRenamed("EstablishmentDate", "EstablishDate")
+
+    final_columns = ["InnerCode", "MainCode", "SecuCode", "ApplyingCodeBack", "SecuAbbr", \
+                     "EstablishDate", "FirstCategory", "FirstCategoryName", "SecondCategory", "SecondCategoryName", \
+                     "ThirdCategory", "ThirdCategoryName", "BasicRiskLevel", "FundSizeStatus", "SDStatus", \
+                     "LastQrtNV", "SecondQrtNV", "ThirdQrtNV", "ForthQrtNV", "LastQrtSD", "SecondQrtSD", \
+                     "ThirdQrtSD", "ForthQrtSD", "LastQrtSDFactor", "SecondQrtSDFactor", "ThirdQrtSDFactor", \
+                     "ForthQrtSDFactor", "RiskLevel", "ChangeDirection", "ChangeReason", "OfficialRiskLevel", "NetAssetFlag", "SDFlag"]
+
+    df_master = df_master.select(*final_columns)
+
+    df_master = df_master.withColumn("EndDate", lit(date_threshod).cast("date"))\
+                     .withColumn("RLDivisionMode", lit(2))\
+                     .withColumn("HigherRiskLevel", when(col("OfficialRiskLevel").isNull(), col("RiskLevel"))
+                                                   .when(col("RiskLevel") >= col("OfficialRiskLevel"), col("RiskLevel"))
+                                                   .otherwise(col("OfficialRiskLevel")))\
+                     .withColumn("UpdateTime", current_date())
+
+    df_master = df_master.withColumn("RiskLevelName", level_mapping("RiskLevel"))\
+                     .withColumn("OfficialRiskLevelName", level_mapping("OfficialRiskLevel"))\
+                     .withColumn("HigherRiskLevelName", level_mapping("HigherRiskLevel"))\
+                     .withColumn("Remark", lit(None).cast("string"))\
+                     .withColumn("JSID", lit(None).cast("long"))
 
     return df_master

@@ -10,6 +10,9 @@ fundrisklevel_filePath = "../data/fundrisklevel.csv"
 fundtypechangenew_filePath = "../data/fundtypechangenew.csv"
 mainfinancialindex_filePath = "../data/mainfinancialindex.csv"
 last_qrt_filePath = "../data/基金风险等级三季度.csv"
+unitnvrestored_filePath = "../data/unitnvrestored.csv"
+zzqz_filePath = "../data/zzqz.csv"
+zzzcf_filePath = "../data/zzzcf.csv"
 
 fundarchives_schema = StructType([
     StructField("InnerCode", IntegerType(), True),
@@ -65,11 +68,33 @@ last_qrt_schema = StructType([
     StructField("HigherRiskLevelName", StringType(), False)
 ])
 
+unitnvrestored_schema = StructType([
+    StructField("InnerCode", IntegerType(), True),
+    StructField("TradingDay", DateType(), False),
+    StructField("UnitNVRestored", DecimalType(18,6), False),
+    StructField("NVRDailyGrowthRate", DecimalType(18,8), False)
+])
+
+zzqz_schema = StructType([
+    StructField("InnerCode", IntegerType(), True),
+    StructField("TradingDay", DateType(), False),
+    StructField("ClosePrice", DecimalType(18,4), False),
+    StructField("ChangePCT", DecimalType(18,8), False)
+])
+
+zzzcf_schema = StructType([
+    StructField("InnerCode", IntegerType(), True),
+    StructField("TradingDay", DateType(), False),
+    StructField("ClosePrice", DecimalType(18,4), False),
+    StructField("ChangePCT", DecimalType(18,8), False)
+])
+
 if __name__ == "__main__":
     print("This is a Spark Application")
     spark = SparkSession.builder.master("local[4]")\
                         .appName('FundLabel')\
                         .getOrCreate()
+    spark.conf.set("spark.sql.autoBroadcastJoinThreshold", -1)
 
     df_fundarchives = spark.read.format("csv").option("header", False).schema(fundarchives_schema).load(fundarchives_filePath)
     df_secumain = spark.read.format("csv").option("header", False).schema(secumain_schema).load(secumain_filePath)
@@ -78,6 +103,9 @@ if __name__ == "__main__":
     df_fundtypechangenew = spark.read.format("csv").option("header", True).schema(fundtypechangenew_schema).load(fundtypechangenew_filePath)
     df_mainfinancialindex = spark.read.format("csv").option("header", False).schema(mainfinancialindex_schema).load(mainfinancialindex_filePath)
     df_last_qrt = spark.read.format("csv").option("header", True).option("charset", "cp936").schema(last_qrt_schema).load(last_qrt_filePath)
+    df_unitnvrestored = spark.read.format("csv").option("header", True).schema(unitnvrestored_schema).load(unitnvrestored_filePath)
+    df_zzqz = spark.read.format("csv").option("header", True).schema(zzqz_schema).load(zzqz_filePath)
+    df_zzzcf = spark.read.format("csv").option("header", True).schema(zzzcf_schema).load(zzzcf_filePath)
     
     with open('bound_portrait_conf.yaml', 'r', encoding='utf8') as f:
         mapping = yaml.load(f, yaml.Loader)
@@ -86,4 +114,4 @@ if __name__ == "__main__":
 
     
     f = Fund_Label()
-    f.fund_risk_estimate(df_fundarchives, df_secumain, df_fundtype, df_fundrisklevel, df_fundtypechangenew, risk_mapping, df_mainfinancialindex, df_last_qrt)
+    f.fund_risk_estimate(df_fundarchives, df_secumain, df_fundtype, df_fundrisklevel, df_fundtypechangenew, risk_mapping, df_mainfinancialindex, df_last_qrt, df_unitnvrestored, df_zzqz, df_zzzcf)
