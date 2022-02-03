@@ -1,8 +1,9 @@
 from pyspark.sql.functions import *
 from pyspark.sql import Window
 from datetime import datetime
+from pyspark.sql.types import *
 
-@udf
+@udf(returnType=StringType())
 def cal_risk(ChiName, FundTypeCode1, FundTypeCode2, RiskLevel, ShareProperties):
     """
     重新定义一般基金
@@ -62,7 +63,7 @@ def cal_risk(ChiName, FundTypeCode1, FundTypeCode2, RiskLevel, ShareProperties):
     else:
         return RiskLevel
 
-@udf
+@udf(returnType=StringType())
 def cal_speical_fund_risk(ChiName, SecurityCode, InitRiskLevel):
     # 新三板基金SecurityCode
     neeq_r3_list = ["009697", "009698", "009693", "009688", "009681", "009682", "009683", "009684", "009695", "009696", "009867", "009868", 
@@ -82,14 +83,14 @@ def cal_speical_fund_risk(ChiName, SecurityCode, InitRiskLevel):
     else:
         return InitRiskLevel
 
-@udf
+@udf(returnType=StringType())
 def tranform_text(PreviousFundTypeName3):
     if PreviousFundTypeName3:
         return ("由%s转型而来")%(PreviousFundTypeName3)
     else:
         return 
 
-@udf
+@udf(returnType=IntegerType())
 def net_asset_flag(ForthQrtNV, ThirdQrtNV, SecondQrtNV, LastQrtNV):
     try:
         if LastQrtNV < 1000:
@@ -104,7 +105,7 @@ def net_asset_flag(ForthQrtNV, ThirdQrtNV, SecondQrtNV, LastQrtNV):
         return 0
 
 
-@udf
+@udf(returnType=StringType())
 def final_risk(InitRiskLevel, EstablishmentLength, NetAssetFlag, FundSizeStatus, SDStatus, SDFlag):
     # 如果基金成立未满1.5年，基础风险等级及为风险等级
     if EstablishmentLength < 18:
@@ -144,7 +145,7 @@ def final_risk(InitRiskLevel, EstablishmentLength, NetAssetFlag, FundSizeStatus,
             return InitRiskLevel
 
 
-@udf
+@udf(returnType=DecimalType(18,6))
 def volatility_calculation(SubProduct):
     result = 1
     for product in SubProduct:
@@ -152,7 +153,7 @@ def volatility_calculation(SubProduct):
     return result - 1
 
 
-@udf
+@udf(returnType=IntegerType())
 def sd_flag(LastQrtSD, SecondQrtSD, ThirdQrtSD, ForthQrtSD, LastQrtStandard, SecondQrtStandard, ThirdQrtStandard, ForthQrtStandard):
     try:
         if LastQrtSD > LastQrtStandard and SecondQrtSD > SecondQrtStandard and ThirdQrtSD > ThirdQrtStandard and ForthQrtSD > ForthQrtStandard:
@@ -165,7 +166,7 @@ def sd_flag(LastQrtSD, SecondQrtSD, ThirdQrtSD, ForthQrtSD, LastQrtStandard, Sec
         return 0
 
 
-@udf
+@udf(returnType=StringType())
 def level_mapping(level):
     if level is None:
         return "未知"
@@ -325,7 +326,7 @@ def pre_fund_risk_calc(df_master, risk_mapping, date_threshod, date_threshod_2):
     df_master = df_master.withColumn("FundTypeName2", when(col("FundTypeName2").contains("FOF"), regexp_replace(df_master.FundTypeName2,'FOF','股票FOF'))
                                                      .otherwise(col("FundTypeName2")))\
                          .withColumn("FundTypeName3", when(col("FundTypeName3").contains("FOF"), regexp_replace(df_master.FundTypeName1,'FOF','股票FOF'))
-                                                     .otherwise(col("FundTypeName1")))\
+                                                     .otherwise(col("FundTypeName3")))\
                          .withColumn("SecurityCode", when(col("SecurityCode").contains("J"), regexp_replace(df_master.SecurityCode,'J',''))
                                                      .otherwise(col("SecurityCode")))
 
@@ -407,6 +408,7 @@ def post_fund_risk_calc(df_master, date_threshod_2, date_threshod_3, date_thresh
                                                        .when(col("ChangeReason").contains("规模下降"), lit(1))
                                                        .when(col("ChangeReason").contains("波动率上升"), lit(1))
                                                        .otherwise(lit(0)))
+
     df_master = df_master.drop("RiskLevel")\
                          .withColumnRenamed("FundTypeName1", "FirstCategoryName")\
                          .withColumnRenamed("FundTypeName2", "SecondCategoryName")\
@@ -424,21 +426,25 @@ def post_fund_risk_calc(df_master, date_threshod_2, date_threshod_3, date_thresh
                      "ThirdCategory", "ThirdCategoryName", "BasicRiskLevel", "FundSizeStatus", "SDStatus", \
                      "LastQrtNV", "SecondQrtNV", "ThirdQrtNV", "ForthQrtNV", "LastQrtSD", "SecondQrtSD", \
                      "ThirdQrtSD", "ForthQrtSD", "LastQrtSDFactor", "SecondQrtSDFactor", "ThirdQrtSDFactor", \
-                     "ForthQrtSDFactor", "RiskLevel", "ChangeDirection", "ChangeReason", "OfficialRiskLevel", "NetAssetFlag", "SDFlag"]
+                     "ForthQrtSDFactor", "RiskLevel", "ChangeDirection", "ChangeReason", "OfficialRiskLevel"]
 
     df_master = df_master.select(*final_columns)
 
     df_master = df_master.withColumn("EndDate", lit(date_threshod).cast("date"))\
-                     .withColumn("RLDivisionMode", lit(2))\
-                     .withColumn("HigherRiskLevel", when(col("OfficialRiskLevel").isNull(), col("RiskLevel"))
-                                                   .when(col("RiskLevel") >= col("OfficialRiskLevel"), col("RiskLevel"))
-                                                   .otherwise(col("OfficialRiskLevel")))\
-                     .withColumn("UpdateTime", current_date())
+                         .withColumn("RLDivisionMode", lit(2))\
+                         .withColumn("HigherRiskLevel", when(col("OfficialRiskLevel").isNull(), col("RiskLevel"))
+                                                       .when(col("RiskLevel") >= col("OfficialRiskLevel"), col("RiskLevel"))
+                                                       .otherwise(col("OfficialRiskLevel")))\
+                         .withColumn("UpdateTime", current_date())
 
     df_master = df_master.withColumn("RiskLevelName", level_mapping("RiskLevel"))\
-                     .withColumn("OfficialRiskLevelName", level_mapping("OfficialRiskLevel"))\
-                     .withColumn("HigherRiskLevelName", level_mapping("HigherRiskLevel"))\
-                     .withColumn("Remark", lit(None).cast("string"))\
-                     .withColumn("JSID", lit(None).cast("long"))
+                         .withColumn("OfficialRiskLevelName", level_mapping("OfficialRiskLevel"))\
+                         .withColumn("HigherRiskLevelName", level_mapping("HigherRiskLevel"))\
+                         .withColumn("Remark", lit(None).cast("string"))\
+                         .withColumn("JSID", lit(None).cast("long"))
+
+    df_master = df_master.na.fill(value=0, subset=["ForthQrtNV", "LastQrtNV", "SecondQrtNV", "ThirdQrtNV", \
+                                                   "LastQrtSD", "SecondQrtSD", "ThirdQrtSD", "ForthQrtSD", \
+                                                   "LastQrtSDFactor", "SecondQrtSDFactor", "ThirdQrtSDFactor", "ForthQrtSDFactor"])
 
     return df_master
