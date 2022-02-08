@@ -113,8 +113,12 @@ def final_risk(InitRiskLevel, EstablishmentLength, NetAssetFlag, FundSizeStatus,
     # 如果基金成立满1.5年但小于3.5年
     elif EstablishmentLength >= 18 and EstablishmentLength <= 42:
         # 如果之前被调整过并且触发回调条件
-        if FundSizeStatus == 1 and NetAssetFlag == 2:
-            return InitRiskLevel + "-规模上升-0-0"
+        if FundSizeStatus == 1:
+            if NetAssetFlag == 2:
+                return InitRiskLevel + "-规模上升-0-0"
+            else:
+                risk_level = (int(InitRiskLevel[-1] )+ 1) if (int(InitRiskLevel[-1]) + 1) < 5 else 5
+                return "R" + str(risk_level)
         # 如果之前没被调整过并且触发上调条件
         elif FundSizeStatus == 0 and NetAssetFlag == 1:
             risk_level = (int(InitRiskLevel[-1] )+ 1) if (int(InitRiskLevel[-1]) + 1) < 5 else 5
