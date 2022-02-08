@@ -106,6 +106,7 @@ if __name__ == "__main__":
     df_unitnvrestored = spark.read.format("csv").option("header", True).schema(unitnvrestored_schema).load(unitnvrestored_filePath)
     df_zzqz = spark.read.format("csv").option("header", True).schema(zzqz_schema).load(zzqz_filePath)
     df_zzzcf = spark.read.format("csv").option("header", True).schema(zzzcf_schema).load(zzzcf_filePath)
+    df_mainfinancialindex = df_mainfinancialindex.join(df_fundarchives.select("InnerCode", "MainCode"), ["InnerCode"], "left")
     
     with open('bound_portrait_conf.yaml', 'r', encoding='utf8') as f:
         mapping = yaml.load(f, yaml.Loader)
