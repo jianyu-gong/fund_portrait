@@ -344,12 +344,12 @@ def post_fund_risk_calc(df_master, date_threshod_2, date_threshod_3, date_thresh
                                                                    .when(col("EndDate") > date_threshod_4, "ThirdQrtNV")
                                                                    .otherwise("ForthQrtNV"))
 
-    df_mainfinancialindex = df_mainfinancialindex.groupBy("InnerCode", "Qrt") \
+    df_mainfinancialindex = df_mainfinancialindex.groupBy("MainCode", "Qrt") \
                                                  .agg(sum("NetAssetsValue").alias("NetAssetsValueSum"))
-    df_mainfinancialindex = df_mainfinancialindex.groupBy("InnerCode").pivot("Qrt").sum("NetAssetsValueSum")
+    df_mainfinancialindex = df_mainfinancialindex.groupBy("MainCode").pivot("Qrt").sum("NetAssetsValueSum")
 
     # 将过去四个季度的净资产join到master table
-    df_master = df_master.join(df_mainfinancialindex, ["InnerCode"], "left")
+    df_master = df_master.join(df_mainfinancialindex, ["MainCode"], "left")
     df_master = df_master.withColumn("EstablishmentLength", months_between(to_date(lit(date_threshod)), col("EstablishmentDate")))
     df_master = df_master.withColumn("NetAssetFlag", net_asset_flag("ForthQrtNV", "ThirdQrtNV", "SecondQrtNV", "LastQrtNV"))
 
@@ -445,6 +445,7 @@ def post_fund_risk_calc(df_master, date_threshod_2, date_threshod_3, date_thresh
 
     df_master = df_master.na.fill(value=0, subset=["ForthQrtNV", "LastQrtNV", "SecondQrtNV", "ThirdQrtNV", \
                                                    "LastQrtSD", "SecondQrtSD", "ThirdQrtSD", "ForthQrtSD", \
-                                                   "LastQrtSDFactor", "SecondQrtSDFactor", "ThirdQrtSDFactor", "ForthQrtSDFactor"])
+                                                   "LastQrtSDFactor", "SecondQrtSDFactor", "ThirdQrtSDFactor", "ForthQrtSDFactor", \
+                                                   "FundSizeStatus", "SDStatus"])
 
     return df_master
