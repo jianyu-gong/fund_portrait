@@ -68,7 +68,8 @@ def cal_speical_fund_risk(ChiName, SecurityCode, InitRiskLevel):
     # 新三板基金SecurityCode
     neeq_r3_list = ["009697", "009698", "009693", "009688", "009681", "009682", "009683", "009684", "009695", "009696", "009867", "009868", 
                     "010887", "010888", "012107", "012108", "011886", "011887", "011011", "010646", "010647", "012850", "012851"]
-    neeq_r4_list = ["011783", "011530", "910006", "910009", "010442", "011790"]
+    neeq_r4_list = ["011783", "011530", "910006", "910009", "014269" , "014270", "014271", "014272", "014273", "014274", "014275", "014276", 
+                    "014277", "014278", "014279", "014280", "014283", "014294", "014062", "014063", "014185", "014186", "014232", "014233"]
     
     if not ChiName: # ChinName有空白
         return InitRiskLevel
@@ -278,10 +279,10 @@ def pre_process_data(df_fundarchives, df_secumain, df_fundtype, df_fundrisklevel
                                        .select(col("InnerCode"), 
                                                col("OfficialRiskLevel"))
 
-    df_master = df_fundarchives.join(df_secumain, ["InnerCode"], "left") \
-                               .join(df_fundtypechangenew, ["InnerCode"], "left") \
-                               .join(df_fundtype, ["FundTypeCode3"], "left") \
-                               .join(df_fundrisklevel, ["InnerCode"], "left")
+    df_master = df_fundarchives.join(df_secumain, ["InnerCode"], "inner") \
+                               .join(df_fundtypechangenew, ["InnerCode"], "inner") \
+                               .join(df_fundtype, ["FundTypeCode3"], "inner") \
+                               .join(df_fundrisklevel, ["InnerCode"], "inner")
 
     return df_master
 
