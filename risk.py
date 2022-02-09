@@ -243,7 +243,7 @@ def pre_process_data(df_fundarchives, df_secumain, df_fundtype, df_fundrisklevel
     """
 
     # SecuCategory IN (8,13) and ListedState IN (1,9)
-    df_secumain = df_secumain.filter(((col("SecuCategory") == 8) | (col("SecuCategory") == 13)) & ((col("ListedState") == 1) | (col("ListedState") == 9)))
+    df_secumain = df_secumain.filter(((col("SecuCategory") == 8) | (col("SecuCategory") == 13)))
 
     # dbo.MFE_FundTypeChangeNew WHERE StartDate <= date_threshod AND FundType NOT LIKE '18%'
     df_fundtypechangenew = df_fundtypechangenew.filter((col("StartDate") <= date_threshod) & (~(col("FundType").startswith("18"))))
@@ -279,10 +279,10 @@ def pre_process_data(df_fundarchives, df_secumain, df_fundtype, df_fundrisklevel
                                        .select(col("InnerCode"), 
                                                col("OfficialRiskLevel"))
 
-    df_master = df_fundarchives.join(df_secumain, ["InnerCode"], "inner") \
-                               .join(df_fundtypechangenew, ["InnerCode"], "inner") \
-                               .join(df_fundtype, ["FundTypeCode3"], "inner") \
-                               .join(df_fundrisklevel, ["InnerCode"], "inner")
+    df_master = df_fundarchives.join(df_secumain, ["InnerCode"], "left") \
+                               .join(df_fundtypechangenew, ["InnerCode"], "left") \
+                               .join(df_fundtype, ["FundTypeCode3"], "left") \
+                               .join(df_fundrisklevel, ["InnerCode"], "left")
 
     return df_master
 
@@ -425,6 +425,17 @@ def post_fund_risk_calc(df_master, date_threshod_2, date_threshod_3, date_thresh
                          .withColumnRenamed("FinalRiskLevel", "RiskLevel")\
                          .withColumnRenamed("SecurityCode", "SecuCode")\
                          .withColumnRenamed("EstablishmentDate", "EstablishDate")
+
+    # 非主代码跟随主代码确定事后风险等级
+    df_master = df_master.withColumn("IsMain", when(col("MainCode") == col("SecuCode"), 1)
+                                              .otherwise(2))
+    windowSpec = Window.partitionBy("MainCode").orderBy(desc("IsMain"))
+    df_master = df_master.withColumn("RiskLevel", first("RiskLevel").over(windowSpec))\
+                        .withColumn("ChangeDirection", first("ChangeDirection").over(windowSpec))\
+                        .withColumn("ChangeReason", first("ChangeReason").over(windowSpec))\
+                        .withColumn("SDStatus", first("SDStatus").over(windowSpec))\
+                        .withColumn("FundSizeStatus", first("FundSizeStatus").over(windowSpec))\
+                        .withColumn("OfficialRiskLevel", first("OfficialRiskLevel").over(windowSpec))
 
     final_columns = ["InnerCode", "MainCode", "SecuCode", "ApplyingCodeBack", "SecuAbbr", \
                      "EstablishDate", "FirstCategory", "FirstCategoryName", "SecondCategory", "SecondCategoryName", \
