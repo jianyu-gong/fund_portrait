@@ -128,9 +128,21 @@ def final_risk(InitRiskLevel, EstablishmentLength, NetAssetFlag, FundSizeStatus,
             return InitRiskLevel
     elif EstablishmentLength > 42:
         # 如果之前被调整过并且触发回调条件
-        if FundSizeStatus == 1 or SDStatus == 1: 
+        if FundSizeStatus == 1 and SDStatus == 1: 
             if NetAssetFlag == 2 and InitRiskLevel in ["R2", "R3", "R4"] and SDFlag == 2:
                 return InitRiskLevel + "-规模上升,波动率下降-0-0"
+            else:
+                risk_level = (int(InitRiskLevel[-1] )+ 1) if (int(InitRiskLevel[-1]) + 1) < 5 else 5
+                return "R" + str(risk_level)
+        elif FundSizeStatus == 1 and SDStatus == 0: 
+            if NetAssetFlag == 2 and InitRiskLevel in ["R2", "R3", "R4"] and SDFlag == 2:
+                return InitRiskLevel + "-规模上升-0-0"
+            else:
+                risk_level = (int(InitRiskLevel[-1] )+ 1) if (int(InitRiskLevel[-1]) + 1) < 5 else 5
+                return "R" + str(risk_level)
+        elif FundSizeStatus == 0 and SDStatus == 1: 
+            if NetAssetFlag == 2 and InitRiskLevel in ["R2", "R3", "R4"] and SDFlag == 2:
+                return InitRiskLevel + "-波动率下降-0-0"
             else:
                 risk_level = (int(InitRiskLevel[-1] )+ 1) if (int(InitRiskLevel[-1]) + 1) < 5 else 5
                 return "R" + str(risk_level)
@@ -400,9 +412,9 @@ def post_fund_risk_calc(df_master, date_threshod_2, date_threshod_3, date_thresh
     df_master = df_master.withColumn("SDFlag", sd_flag("LastQrtSD", "SecondQrtSD", "ThirdQrtSD", "ForthQrtSD", "LastQrtStandard", "SecondQrtStandard", "ThirdQrtStandard", "ForthQrtStandard"))
     df_master = df_master.withColumn("SDNote", final_risk("InitRiskLevel", "EstablishmentLength", "NetAssetFlag", "FundSizeStatus", "SDStatus", "SDFlag"))
 
-    df_master = df_master.withColumn("SDStatus", when(col("SDNote").contains("-"), split(col("SDNote"), "-").getItem(3))
+    df_master = df_master.withColumn("SDStatus", when(col("SDNote").contains("-"), split(col("SDNote"), "-").getItem(3).cast("integer"))
                                                 .otherwise(col("SDStatus")))\
-                         .withColumn("FundSizeStatus", when(col("SDNote").contains("-"), split(col("SDNote"), "-").getItem(2))
+                         .withColumn("FundSizeStatus", when(col("SDNote").contains("-"), split(col("SDNote"), "-").getItem(2).cast("integer"))
                                                       .otherwise(col("FundSizeStatus")))\
                          .withColumn("ChangeReason", when(col("SDNote").contains("-"), split(col("SDNote"), "-").getItem(1))
                                                     .otherwise(col("ChangeReason")))\
