@@ -1,6 +1,7 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.types import *
 from fund_label import Fund_Label
+from pyspark.sql.functions import *
 import yaml
 
 fundarchives_filePath = "../data/fundarchives.csv"
@@ -96,16 +97,17 @@ if __name__ == "__main__":
                         .getOrCreate()
     spark.conf.set("spark.sql.autoBroadcastJoinThreshold", -1)
 
-    df_fundarchives = spark.read.format("csv").option("header", False).schema(fundarchives_schema).load(fundarchives_filePath)
-    df_secumain = spark.read.format("csv").option("header", False).schema(secumain_schema).load(secumain_filePath)
-    df_fundtype = spark.read.format("csv").option("header", True).option("charset", "cp936").schema(fundtype_schema).load(fundtype_filePath)
-    df_fundrisklevel = spark.read.format("csv").option("header", True).load(fundrisklevel_filePath)
-    df_fundtypechangenew = spark.read.format("csv").option("header", True).schema(fundtypechangenew_schema).load(fundtypechangenew_filePath)
-    df_mainfinancialindex = spark.read.format("csv").option("header", False).schema(mainfinancialindex_schema).load(mainfinancialindex_filePath)
-    df_last_qrt = spark.read.format("csv").option("header", True).option("charset", "cp936").schema(last_qrt_schema).load(last_qrt_filePath)
-    df_unitnvrestored = spark.read.format("csv").option("header", True).schema(unitnvrestored_schema).load(unitnvrestored_filePath)
-    df_zzqz = spark.read.format("csv").option("header", True).schema(zzqz_schema).load(zzqz_filePath)
-    df_zzzcf = spark.read.format("csv").option("header", True).schema(zzzcf_schema).load(zzzcf_filePath)
+    df_fundarchives = spark.read.format("csv").option("header", False).schema(fundarchives_schema).load(fundarchives_filePath).select("InnerCode", "MainCode", "SecurityCode", "ApplyingCodeFront", "ApplyingCodeBack", "EstablishmentDate", "EstablishmentDateII", "ShareProperties", "ExpireDate")
+    df_secumain = spark.read.format("csv").option("header", False).schema(secumain_schema).load(secumain_filePath).select("InnerCode", "ChiName", "SecuAbbr", "SecuCategory", "ListedState")
+    df_fundtype = spark.read.format("csv").option("header", True).option("charset", "cp936").schema(fundtype_schema).load(fundtype_filePath).select("FundTypeCode", "FundTypeName", "FNodeCode", "Level", "IfExecuted")
+    df_fundrisklevel = spark.read.format("csv").option("header", True).load(fundrisklevel_filePath).select("InnerCode", "RiskLevel", "BeginDate")
+    df_fundrisklevel = df_fundrisklevel.withColumn("BeginDate", to_date("BeginDate", "yyyy-MM-dd"))
+    df_fundtypechangenew = spark.read.format("csv").option("header", False).schema(fundtypechangenew_schema).load(fundtypechangenew_filePath).select("InnerCode", "FundType", "StartDate")
+    df_mainfinancialindex = spark.read.format("csv").option("header", False).schema(mainfinancialindex_schema).load(mainfinancialindex_filePath).select("InnerCode", "EndDate", "NetAssetsValue")
+    df_last_qrt = spark.read.format("csv").option("header", True).option("charset", "cp936").schema(last_qrt_schema).load(last_qrt_filePath).select("InnerCode", "FundSizeStatus", "SDStatus", "HigherRiskLevel", "HigherRiskLevelName")
+    df_unitnvrestored = spark.read.format("csv").option("header", True).schema(unitnvrestored_schema).load(unitnvrestored_filePath).select("InnerCode", "TradingDay", "UnitNVRestored", "NVRDailyGrowthRate")
+    df_zzqz = spark.read.format("csv").option("header", True).schema(zzqz_schema).load(zzqz_filePath).select("InnerCode", "TradingDay", "ClosePrice", "ChangePCT")
+    df_zzzcf = spark.read.format("csv").option("header", True).schema(zzzcf_schema).load(zzzcf_filePath).select("InnerCode", "TradingDay", "ClosePrice", "ChangePCT")
     df_mainfinancialindex = df_mainfinancialindex.join(df_fundarchives.select("InnerCode", "MainCode"), ["InnerCode"], "left")
     
     with open('bound_portrait_conf.yaml', 'r', encoding='utf8') as f:
