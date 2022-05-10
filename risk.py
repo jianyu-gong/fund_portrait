@@ -441,7 +441,7 @@ def post_fund_risk_calc(df_master, date_threshod_2, date_threshod_3, date_thresh
     # 非主代码跟随主代码确定事后风险等级
     df_master = df_master.withColumn("IsMain", when(col("MainCode") == col("SecuCode"), 1)
                                               .otherwise(2))
-    windowSpec = Window.partitionBy("MainCode").orderBy(desc("IsMain"))
+    windowSpec = Window.partitionBy("MainCode").orderBy("IsMain")
     df_master = df_master.withColumn("RiskLevel", first("RiskLevel").over(windowSpec))\
                         .withColumn("ChangeDirection", first("ChangeDirection").over(windowSpec))\
                         .withColumn("ChangeReason", first("ChangeReason").over(windowSpec))\
@@ -449,7 +449,7 @@ def post_fund_risk_calc(df_master, date_threshod_2, date_threshod_3, date_thresh
                         .withColumn("FundSizeStatus", first("FundSizeStatus").over(windowSpec))\
                         .withColumn("OfficialRiskLevel", first("OfficialRiskLevel").over(windowSpec))
 
-    final_columns = ["InnerCode", "MainCode", "SecuCode", "ApplyingCodeBack", "SecuAbbr", \
+    final_columns = ["InnerCode", "MainCode", "SecuCode", "ApplyingCodeFront", "ApplyingCodeBack", "SecuAbbr", \
                      "EstablishDate", "FirstCategory", "FirstCategoryName", "SecondCategory", "SecondCategoryName", \
                      "ThirdCategory", "ThirdCategoryName", "BasicRiskLevel", "FundSizeStatus", "SDStatus", \
                      "LastQrtNV", "SecondQrtNV", "ThirdQrtNV", "ForthQrtNV", "LastQrtSD", "SecondQrtSD", \
