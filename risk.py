@@ -67,9 +67,11 @@ def cal_risk(ChiName, FundTypeCode1, FundTypeCode2, RiskLevel, ShareProperties):
 def cal_speical_fund_risk(ChiName, SecurityCode, InitRiskLevel):
     # 新三板基金SecurityCode
     neeq_r3_list = ["009697", "009698", "009693", "009688", "009681", "009682", "009683", "009684", "009695", "009696", "009867", "009868", 
-                    "010887", "010888", "012107", "012108", "011886", "011887", "011011", "010646", "010647", "012850", "012851"]
-    neeq_r4_list = ["011783", "011530", "910006", "910009", "014269" , "014270", "014271", "014272", "014273", "014274", "014275", "014276", 
-                    "014277", "014278", "014279", "014280", "014283", "014294", "014062", "014063", "014185", "014186", "014232", "014233"]
+                    "010887", "010888", "012107", "012108", "011886", "011887", "011011", "010646", "010647", "012850", "012851", "012194",
+                    "012193", "910005"]
+    neeq_r4_list = ["011783", "011530", "910006", "910009", "011790", "013867", "013868", "014269" , "014270", "014271", "014272", "014273", 
+                    "014274", "014275", "014276", "014277", "014278", "014279", "014280", "014283", "014294", "014062", "014063", "014185",
+                    "014186", "014232", "014233", "014736", "014737"]
     
     if not ChiName: # ChinName有空白
         return InitRiskLevel
@@ -81,6 +83,32 @@ def cal_speical_fund_risk(ChiName, SecurityCode, InitRiskLevel):
         return "R3"
     elif SecurityCode in neeq_r4_list:
         return "R4"
+    else:
+        return InitRiskLevel
+
+
+@udf(returnType=StringType())
+def daily_cal_speical_fund_risk(ChiName, SecurityCode, InitRiskLevel):
+    # 新三板基金SecurityCode
+    neeq_r3_list = ["009697", "009698", "009693", "009688", "009681", "009682", "009683", "009684", "009695", "009696", "009867", "009868", 
+                    "010887", "010888", "012107", "012108", "011886", "011887", "011011", "010646", "010647", "012850", "012851", "012194",
+                    "012193", "910005"]
+    neeq_r4_list = ["011783", "011530", "910006", "910009", "011790", "013867", "013868"]
+    beijing_list = ["014269" , "014270", "014271", "014272", "014273", "014274", "014275", "014276", "014277", "014278", "014279", "014280", 
+                    "014283", "014294", "014062", "014063", "014185", "014186", "014232", "014233", "014736", "014737"]
+    
+    if not ChiName: # ChinName有空白
+        return InitRiskLevel
+    elif "科创" in ChiName or "科技创新" in ChiName:
+        return "R4-1"
+    elif "REIT" in ChiName.upper():
+        return "R4-2"
+    elif SecurityCode in neeq_r3_list:
+        return "R3-3"
+    elif SecurityCode in neeq_r4_list:
+        return "R4-3"
+    elif SecurityCode in beijing_list:
+        return "R4-4"
     else:
         return InitRiskLevel
 
@@ -349,6 +377,56 @@ def pre_fund_risk_calc(df_master, risk_mapping, date_threshod, date_threshod_2):
                                                      .otherwise(col("SecurityCode")))
 
     return df_master
+
+
+def daily_pre_fund_risk_calc(df_master, risk_mapping, date_threshod, date_threshod_2):
+    """
+    基金事前风险计算
+    """
+    # 通过risk配置表中确定新的分类
+    df_master = df_master.join(risk_mapping, ["FundTypeName1", "FundTypeName2", "FundTypeName3"], "left")
+    
+    # 一般基金计算
+    df_master = df_master.withColumn("BasicRiskLevel", cal_risk("ChiName", "FundTypeCode1", "FundTypeCode2", "InitialRiskLevel", "ShareProperties"))
+    
+    # 重新定义1,2,3级分类名称
+    df_master = df_master.withColumn("FundTypeName3", when(col("BasicRiskLevel").contains("-"), split(col("BasicRiskLevel"), "-").getItem(3))
+                                                     .otherwise(col("FundTypeName3")))\
+                         .withColumn("FundTypeName2", when(col("BasicRiskLevel").contains("-"), split(col("BasicRiskLevel"), "-").getItem(2))
+                                                    .otherwise(col("FundTypeName2")))\
+                         .withColumn("FundTypeName1", when(col("BasicRiskLevel").contains("-"), split(col("BasicRiskLevel"), "-").getItem(1))
+                                                    .otherwise(col("FundTypeName1")))\
+                         .withColumn("BasicRiskLevel", when(col("BasicRiskLevel").contains("-"), split(col("BasicRiskLevel"), "-").getItem(0))
+                                                    .otherwise(col("BasicRiskLevel")))
+
+
+    df_master = df_master.filter((col("EstablishmentDate") <= date_threshod) & ((col("ExpireDate") > date_threshod) | (col("ExpireDate").isNull())))
+    
+    # 特殊基金计算
+    df_master = df_master.withColumn("BasicRiskLevel", daily_cal_speical_fund_risk("ChiName", "SecurityCode", "BasicRiskLevel"))
+
+    # 根据主代码找转型基金
+    df_master = df_master.withColumn("SpecialType", when(col("BasicRiskLevel").contains("-"), split(col("BasicRiskLevel"), "-").getItem(1).cast("long"))
+                                                   .otherwise(lit(None).cast("long")))\
+                         .withColumn("BasicRiskLevel", when(col("BasicRiskLevel").contains("-"), split(col("BasicRiskLevel"), "-").getItem(0))
+                                                      .otherwise(col("BasicRiskLevel")))
+
+    df_master = df_master.withColumn("InitialRiskLevelDesc", level_mapping("InitialRiskLevel"))\
+                         .withColumn("BasicRiskLevelDesc", level_mapping("BasicRiskLevel"))\
+                         .withColumn("EndDate", date_sub(current_date(), 1).cast("date"))\
+                         .withColumn("RLDivisionMode", lit(2))\
+                         .withColumn("Remark", lit(None).cast("string"))\
+                         .withColumn("JSID", lit(None).cast("long"))\
+                         .withColumn("FundTypeCode", col("FundTypeCode3").cast("long"))\
+                         .withColumn("UpdateTime", current_date())
+    
+    final_columns = ["InnerCode", "EndDate", "FundTypeCode", "RLDivisionMode", "InitialRiskLevel", "InitialRiskLevelDesc", \
+                     "BasicRiskLevel", "BasicRiskLevelDesc", "SpecialType", "Remark", "UpdateTime", "JSID"]
+
+    df_master = df_master.select(*final_columns)
+
+    return df_master
+
 
 def post_fund_risk_calc(df_master, date_threshod_2, date_threshod_3, date_threshod_4, date_threshod_5, date_threshod, df_mainfinancialindex, df_last_qrt, df_unitnvrestored_master, zzzs_dict):
     """
