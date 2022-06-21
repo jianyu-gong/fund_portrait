@@ -256,6 +256,7 @@ def pre_process_data(df_fundarchives, df_secumain, df_fundtype, df_fundrisklevel
 
     # SecuCategory IN (8,13) and ListedState IN (1,9)
     df_secumain = df_secumain.filter(((col("SecuCategory") == 8) | (col("SecuCategory") == 13)))
+    df_secumain = df_secumain.filter(((col("ListedState") == 1) | (col("ListedState") == 3) | (col("ListedState") == 9)))
 
     # dbo.MFE_FundTypeChangeNew WHERE StartDate <= date_threshod AND FundType NOT LIKE '18%'
     df_fundtypechangenew = df_fundtypechangenew.filter((col("StartDate") <= date_threshod) & (~(col("FundType").startswith("18"))))
