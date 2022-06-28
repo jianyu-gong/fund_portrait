@@ -10,7 +10,7 @@ fundtype_filePath = "../data/fundtype.csv"
 fundrisklevel_filePath = "../data/fundrisklevel.csv"
 fundtypechangenew_filePath = "../data/fundtypechangenew.csv"
 mainfinancialindex_filePath = "../data/mainfinancialindex.csv"
-last_qrt_filePath = "../data/基金风险等级三季度.csv"
+last_qrt_filePath = "../data/基金风险等级四季度.csv"
 unitnvrestored_filePath = "../data/unitnvrestored.csv"
 zzqz_filePath = "../data/zzqz.csv"
 zzzcf_filePath = "../data/zzzcf.csv"
@@ -45,8 +45,10 @@ fundtype_schema = StructType([
 
 fundrisklevel_schema = StructType([
     StructField("InnerCode", IntegerType(), True),
+    StructField("InfoSource", StringType(), False),
     StructField("RiskLevel", IntegerType(), False),
-    StructField("BeginDate", DateType(), False)
+    StructField("BeginDate", DateType(), False),
+    StructField("IfEffected", IntegerType(), False)
 ])
 
 fundtypechangenew_schema = StructType([
@@ -98,7 +100,7 @@ if __name__ == "__main__":
     spark.conf.set("spark.sql.autoBroadcastJoinThreshold", -1)
 
     df_fundarchives = spark.read.format("csv").option("header", False).schema(fundarchives_schema).load(fundarchives_filePath).select("InnerCode", "MainCode", "SecurityCode", "ApplyingCodeFront", "ApplyingCodeBack", "EstablishmentDate", "EstablishmentDateII", "ShareProperties", "ExpireDate")
-    df_secumain = spark.read.format("csv").option("header", False).schema(secumain_schema).load(secumain_filePath).select("InnerCode", "ChiName", "SecuAbbr", "SecuCategory", "ListedState")
+    df_secumain = spark.read.format("csv").option("header", False).option("charset", "cp936").schema(secumain_schema).load(secumain_filePath).select("InnerCode", "ChiName", "SecuAbbr", "SecuCategory", "ListedState")
     df_fundtype = spark.read.format("csv").option("header", True).option("charset", "cp936").schema(fundtype_schema).load(fundtype_filePath).select("FundTypeCode", "FundTypeName", "FNodeCode", "Level", "IfExecuted")
     df_fundrisklevel = spark.read.format("csv").option("header", True).load(fundrisklevel_filePath).select("InnerCode", "RiskLevel", "BeginDate")
     df_fundrisklevel = df_fundrisklevel.withColumn("BeginDate", to_date("BeginDate", "yyyy-MM-dd"))

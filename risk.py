@@ -277,7 +277,7 @@ def previous_quarter(ref):
     return datetime(ref.year, 9, 30).strftime('%Y-%m-%d'), datetime(ref.year, 6, 30).strftime('%Y-%m-%d'), datetime(ref.year, 3, 31).strftime('%Y-%m-%d'), datetime(ref.year-1, 12, 31).strftime('%Y-%m-%d')
 
 
-def pre_process_data(df_fundarchives, df_secumain, df_fundtype, df_fundrisklevel, df_fundtypechangenew, date_threshod):
+def pre_process_data(df_fundarchives, df_secumain, df_fundtype, df_fundrisklevel, df_fundtypechangenew, date_threshod, job_name):
     """
     根据query来整合基金的type和名称
     """
@@ -285,12 +285,17 @@ def pre_process_data(df_fundarchives, df_secumain, df_fundtype, df_fundrisklevel
     # SecuCategory IN (8,13) and ListedState IN (1,9)
     df_secumain = df_secumain.filter(((col("SecuCategory") == 8) | (col("SecuCategory") == 13)))
     df_secumain = df_secumain.filter(((col("ListedState") == 1) | (col("ListedState") == 3) | (col("ListedState") == 9)))
+  
+    if job_name == "monthly_report":
+        # dbo.MFE_FundTypeChangeNew WHERE StartDate <= date_threshod AND FundType NOT LIKE '18%'
+        df_fundtypechangenew = df_fundtypechangenew.filter((col("StartDate") <= date_threshod))
 
-    # dbo.MFE_FundTypeChangeNew WHERE StartDate <= date_threshod AND FundType NOT LIKE '18%'
-    df_fundtypechangenew = df_fundtypechangenew.filter((col("StartDate") <= date_threshod) & (~(col("FundType").startswith("18"))))
+    elif job_name == "dairly_report":
+        df_fundtypechangenew = df_fundtypechangenew.filter((col("StartDate") <= current_date()))
+    
     windowSpec = Window.partitionBy("InnerCode").orderBy(desc("StartDate"))
     df_fundtypechangenew = df_fundtypechangenew.withColumn("row_num", row_number().over(windowSpec))
-    df_fundtypechangenew = df_fundtypechangenew.filter(col("row_num") == 1).select(col("InnerCode"), col("FundType").alias("FundTypeCode3"))
+    df_fundtypechangenew = df_fundtypechangenew.filter((col("row_num") == 1) & (~(col("FundType").startswith("18")))).select(col("InnerCode"), col("FundType").alias("FundTypeCode3"))
 
     # fund type name by joining three levels
     df_fundtype_level_1 = df_fundtype.filter((col("Level") == 1) & (col("IfExecuted") == 1))
@@ -307,6 +312,8 @@ def pre_process_data(df_fundarchives, df_secumain, df_fundtype, df_fundrisklevel
                                     
     # WHERE BeginDate <= date_threshod
     df_fundrisklevel = df_fundrisklevel.filter(col("BeginDate") <= date_threshod)
+    df_fundrisklevel = df_fundrisklevel.filter((col("IfEffected") == 1) & (col("InfoSource") != "聚源规则定义"))
+
     windowSpec = Window.partitionBy("InnerCode").orderBy(desc("BeginDate"))
     df_fundrisklevel = df_fundrisklevel.withColumn("row_num", row_number().over(windowSpec))\
                                        .withColumn("OfficialRiskLevel", when(col("RiskLevel") == 1, "R1")
@@ -320,8 +327,8 @@ def pre_process_data(df_fundarchives, df_secumain, df_fundtype, df_fundrisklevel
                                        .select(col("InnerCode"), 
                                                col("OfficialRiskLevel"))
 
-    df_master = df_fundarchives.join(df_secumain, ["InnerCode"], "left") \
-                               .join(df_fundtypechangenew, ["InnerCode"], "left") \
+    df_master = df_secumain.join(df_fundarchives, ["InnerCode"], "left") \
+                               .join(df_fundtypechangenew, ["InnerCode"], "inner") \
                                .join(df_fundtype, ["FundTypeCode3"], "left") \
                                .join(df_fundrisklevel, ["InnerCode"], "left")
 
@@ -379,13 +386,18 @@ def pre_fund_risk_calc(df_master, risk_mapping, date_threshod, date_threshod_2):
     return df_master
 
 
-def daily_pre_fund_risk_calc(df_master, risk_mapping, date_threshod, date_threshod_2):
+def daily_pre_fund_risk_calc(df_master, risk_mapping, df_fundtyperisklevel, df_last_qrt):
     """
     基金事前风险计算
     """
+    df_master = df_master.join(df_last_qrt, df_last_qrt.SecurityCode == df_master.SecurityCode, "leftanti")
+    df_master = df_master.withColumn("FundTypeName2", when(col("FundTypeName2").contains("FOF"), regexp_replace(df_master.FundTypeName2,'FOF','股票FOF'))
+                                                     .otherwise(col("FundTypeName2")))\
+                         .withColumn("FundTypeName3", when(col("FundTypeName3").contains("FOF"), regexp_replace(df_master.FundTypeName1,'FOF','股票FOF'))
+                                                     .otherwise(col("FundTypeName3")))
     # 通过risk配置表中确定新的分类
     df_master = df_master.join(risk_mapping, ["FundTypeName1", "FundTypeName2", "FundTypeName3"], "left")
-    
+
     # 一般基金计算
     df_master = df_master.withColumn("BasicRiskLevel", cal_risk("ChiName", "FundTypeCode1", "FundTypeCode2", "InitialRiskLevel", "ShareProperties"))
     
@@ -400,7 +412,7 @@ def daily_pre_fund_risk_calc(df_master, risk_mapping, date_threshod, date_thresh
                                                     .otherwise(col("BasicRiskLevel")))
 
 
-    df_master = df_master.filter((col("EstablishmentDate") <= date_threshod) & ((col("ExpireDate") > date_threshod) | (col("ExpireDate").isNull())))
+    # df_master = df_master.filter((col("EstablishmentDate") <= date_threshod) & ((col("ExpireDate") > date_threshod) | (col("ExpireDate").isNull())))
     
     # 特殊基金计算
     df_master = df_master.withColumn("BasicRiskLevel", daily_cal_speical_fund_risk("ChiName", "SecurityCode", "BasicRiskLevel"))
@@ -410,6 +422,8 @@ def daily_pre_fund_risk_calc(df_master, risk_mapping, date_threshod, date_thresh
                                                    .otherwise(lit(None).cast("long")))\
                          .withColumn("BasicRiskLevel", when(col("BasicRiskLevel").contains("-"), split(col("BasicRiskLevel"), "-").getItem(0))
                                                       .otherwise(col("BasicRiskLevel")))
+    
+    df_master = df_master.alias("ft").join(df_fundtyperisklevel.alias("ftl"), col("ft.FundTypeName3") == col("ftl.FundTypeName"), "left")
 
     df_master = df_master.withColumn("InitialRiskLevelDesc", level_mapping("InitialRiskLevel"))\
                          .withColumn("BasicRiskLevelDesc", level_mapping("BasicRiskLevel"))\
@@ -417,7 +431,7 @@ def daily_pre_fund_risk_calc(df_master, risk_mapping, date_threshod, date_thresh
                          .withColumn("RLDivisionMode", lit(2))\
                          .withColumn("Remark", lit(None).cast("string"))\
                          .withColumn("JSID", lit(None).cast("long"))\
-                         .withColumn("FundTypeCode", col("FundTypeCode3").cast("long"))\
+                         .withColumn("FundTypeCode", col("FundTypeCode").cast("long"))\
                          .withColumn("UpdateTime", current_date())
     
     final_columns = ["InnerCode", "EndDate", "FundTypeCode", "RLDivisionMode", "InitialRiskLevel", "InitialRiskLevelDesc", \
