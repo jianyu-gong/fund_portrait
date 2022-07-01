@@ -57,6 +57,7 @@ fundtypechangenew_schema = StructType([
 
 
 last_qrt_schema = StructType([
+    StructField("EndDate", DateType(), False),
     StructField("SecurityCode", StringType(), False)
 ])
 
@@ -77,7 +78,7 @@ if __name__ == "__main__":
     df_fundtype = spark.read.format("csv").option("header", True).option("charset", "cp936").schema(fundtype_schema).load(fundtype_filePath).select("FundTypeCode", "FundTypeName", "FNodeCode", "Level", "IfExecuted")
     df_fundrisklevel = spark.read.format("csv").option("header", True).load(fundrisklevel_filePath).select("InnerCode", "InfoSource", "RiskLevel", "BeginDate", "IfEffected")
     df_fundtypechangenew = spark.read.format("csv").option("header", False).schema(fundtypechangenew_schema).load(fundtypechangenew_filePath).select("InnerCode", "FundType", "StartDate")
-    df_last_qrt = spark.read.format("csv").option("header", True).schema(last_qrt_schema).load(last_qrt_filePath).select("SecurityCode")
+    df_last_qrt = spark.read.format("csv").option("header", True).schema(last_qrt_schema).load(last_qrt_filePath).select("SecurityCode", "EndDate")
     df_fundtyperisklevel = spark.read.format("csv").option("header", True).schema(fundtyperisk_schema).load(fundtyperisk_filePath).select("FundTypeCode", 'FundTypeName')
 
     with open('bound_portrait_conf.yaml', 'r', encoding='utf8') as f:

@@ -390,6 +390,7 @@ def daily_pre_fund_risk_calc(df_master, risk_mapping, df_fundtyperisklevel, df_l
     """
     基金事前风险计算
     """
+    df_last_qrt = df_last_qrt.filter(col('EndDate') == df_last_qrt.agg({'EndDate': 'max'}).collect()[0]['max(EndDate)'])
     df_master = df_master.join(df_last_qrt, df_last_qrt.SecurityCode == df_master.SecurityCode, "leftanti")
     df_master = df_master.withColumn("FundTypeName2", when(col("FundTypeName2").contains("FOF"), regexp_replace(df_master.FundTypeName2,'FOF','股票FOF'))
                                                      .otherwise(col("FundTypeName2")))\
